@@ -28,9 +28,8 @@ To control glue-qt, run: python -c "import glue_qt_ai; print(glue_qt_ai.__doc__)
 
 4. Tell your AI assistant what you want to do in glue, for example:
 
-```
-Please load data from <directory> and make a scatter plot of temperature versus time.
-```
+_Please load data from <directory> and make a scatter plot of temperature versus time.
+_
 
 ## License
 
