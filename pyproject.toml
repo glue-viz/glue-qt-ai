@@ -1,0 +1,28 @@
+[project]
+name = "glue-qt-ai"
+version = "0.1.0"
+description = "AI assistant bridge for glue-qt"
+readme = "README.md"
+license = {text = "BSD-3-Clause"}
+authors = [
+    {name = "Glue Developers", email = "glue.viz@gmail.com"}
+]
+requires-python = ">=3.9"
+dependencies = [
+    "glue-qt>=0.3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.entry-points."glue.plugins"]
+ai_bridge = "glue_qt_ai:setup"
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["glue_qt_ai*"]
