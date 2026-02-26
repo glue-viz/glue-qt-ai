@@ -7,18 +7,33 @@ Simple client for sending commands to a running glue-qt bridge server.
 import json
 import socket
 import sys
+from pathlib import Path
 
-DEFAULT_PORT = 9876
 DEFAULT_HOST = 'localhost'
+PORT_FILE = Path.home() / '.glue' / 'bridge_port'
+
+
+def get_bridge_port():
+    """Get the bridge port from the port file."""
+    if PORT_FILE.exists():
+        try:
+            return int(PORT_FILE.read_text().strip())
+        except (ValueError, IOError):
+            pass
+    raise ConnectionRefusedError(
+        "Bridge port file not found. Is the bridge running? "
+        "Enable it via Plugins → AI Bridge... in glue."
+    )
 
 
 class BridgeConnection:
     """Persistent connection to glue bridge server."""
 
-    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=30):
+    def __init__(self, host=DEFAULT_HOST, port=None, timeout=30, token=None):
         self.host = host
-        self.port = port
+        self.port = port if port is not None else get_bridge_port()
         self.timeout = timeout
+        self.token = token
         self.sock = None
         self.approved = False
 
@@ -28,12 +43,19 @@ class BridgeConnection:
         self.sock.settimeout(self.timeout)
         self.sock.connect((self.host, self.port))
 
+        # Send auth message with token (if we have one)
+        auth_request = {'type': 'auth', 'token': self.token}
+        self.sock.sendall((json.dumps(auth_request) + '\n').encode('utf-8'))
+
         # Wait for approval response
         response_data = self._receive_line()
         response = json.loads(response_data)
 
         if response.get('success'):
             self.approved = True
+            # Capture token from server (for first-time approval)
+            if response.get('token'):
+                self.token = response['token']
             return True
         else:
             self.sock.close()
@@ -76,16 +98,16 @@ class BridgeConnection:
 _connection = None
 
 
-def get_connection(host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=30):
+def get_connection(host=DEFAULT_HOST, port=None, timeout=30, token=None):
     """Get or create a connection to the bridge server."""
     global _connection
     if _connection is None or _connection.sock is None:
-        _connection = BridgeConnection(host, port, timeout)
+        _connection = BridgeConnection(host, port, timeout, token)
         _connection.connect()
     return _connection
 
 
-def send_command(code, cmd_type='exec', host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=30):
+def send_command(code, cmd_type='exec', host=DEFAULT_HOST, port=None, timeout=30, token=None):
     """
     Send a command to the glue bridge server.
 
@@ -97,10 +119,12 @@ def send_command(code, cmd_type='exec', host=DEFAULT_HOST, port=DEFAULT_PORT, ti
         'exec' for statements, 'eval' for expressions
     host : str
         Server host (default: localhost)
-    port : int
-        Server port (default: 9876)
+    port : int, optional
+        Server port (default: auto-detect from port file)
     timeout : float
         Socket timeout in seconds
+    token : str, optional
+        Session token for auto-approval (obtained from first manual approval)
 
     Returns
     -------
@@ -108,13 +132,13 @@ def send_command(code, cmd_type='exec', host=DEFAULT_HOST, port=DEFAULT_PORT, ti
         Response from server with keys: success, result, stdout, stderr, error, traceback
     """
     try:
-        conn = get_connection(host, port, timeout)
+        conn = get_connection(host, port, timeout, token)
         return conn.send(code, cmd_type)
     except (ConnectionError, BrokenPipeError, OSError):
         # Connection lost, clear it and retry once
         global _connection
         _connection = None
-        conn = get_connection(host, port, timeout)
+        conn = get_connection(host, port, timeout, token)
         return conn.send(code, cmd_type)
 
 
@@ -155,7 +179,8 @@ def main():
     parser.add_argument('code', nargs='?', help='Python code to execute')
     parser.add_argument('--eval', '-e', action='store_true', help='Evaluate as expression')
     parser.add_argument('--host', default=DEFAULT_HOST, help='Server host')
-    parser.add_argument('--port', type=int, default=DEFAULT_PORT, help='Server port')
+    parser.add_argument('--port', type=int, default=None, help='Server port (default: auto-detect)')
+    parser.add_argument('--token', '-t', default=None, help='Session token for auto-approval')
     parser.add_argument('--interactive', '-i', action='store_true', help='Interactive mode')
     args = parser.parse_args()
 
@@ -164,6 +189,17 @@ def main():
         print("Type Python code to execute in glue. Prefix with '?' to evaluate.")
         print("Type 'quit' or 'exit' to quit.")
         print()
+
+        # Connect and show token if this is first approval
+        try:
+            conn = get_connection(host=args.host, port=args.port, token=args.token)
+            if conn.token and conn.token != args.token:
+                print(f"Session token: {conn.token}")
+                print("Use --token <token> for auto-approval in future connections.")
+                print()
+        except ConnectionRefusedError:
+            print("Error: Could not connect to glue bridge server", file=sys.stderr)
+            sys.exit(1)
 
         while True:
             try:
@@ -183,7 +219,7 @@ def main():
                 cmd_type = 'eval'
 
             try:
-                result = send_command(code, cmd_type=cmd_type, host=args.host, port=args.port)
+                result = send_command(code, cmd_type=cmd_type, host=args.host, port=args.port, token=args.token)
                 _print_result(result)
             except ConnectionRefusedError:
                 print("Error: Could not connect to glue bridge server", file=sys.stderr)
@@ -192,7 +228,11 @@ def main():
     elif args.code:
         cmd_type = 'eval' if args.eval else 'exec'
         try:
-            result = send_command(args.code, cmd_type=cmd_type, host=args.host, port=args.port)
+            conn = get_connection(host=args.host, port=args.port, token=args.token)
+            # Print token if this was first manual approval (token changed)
+            if conn.token and conn.token != args.token:
+                print(f"GLUE_BRIDGE_TOKEN={conn.token}")
+            result = conn.send(args.code, cmd_type)
             _print_result(result)
             sys.exit(0 if result['success'] else 1)
         except ConnectionRefusedError:

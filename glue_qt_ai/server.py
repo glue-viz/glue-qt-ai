@@ -8,15 +8,18 @@ Security: Requires user approval via popup dialog for each new connection.
 """
 
 import json
+import secrets
 import sys
 import traceback
 from io import StringIO
+from pathlib import Path
 
 from qtpy.QtCore import QObject, Signal, Slot
 from qtpy.QtNetwork import QTcpServer, QHostAddress
 from qtpy.QtWidgets import QMessageBox
 
-DEFAULT_PORT = 9876
+DEFAULT_PORT = 0  # 0 means pick a random available port
+PORT_FILE = Path.home() / '.glue' / 'bridge_port'
 
 
 class GlueBridgeServer(QObject):
@@ -32,6 +35,7 @@ class GlueBridgeServer(QObject):
         self.server = QTcpServer(self)
         self.approved_connections = []
         self.pending_connections = []
+        self.session_token = None  # Generated on first manual approval
 
         # Build the namespace for command execution
         self.namespace = {
@@ -56,11 +60,20 @@ from glue.core.subset import SubsetState
     def start(self):
         """Start the server."""
         if self.server.listen(QHostAddress.SpecialAddress.LocalHost, self.port):
+            # Get actual port (important when port=0 for random assignment)
+            self.port = self.server.serverPort()
+            # Write port to file for client discovery
+            self._write_port_file()
             print(f"Glue AI bridge server listening on localhost:{self.port}")
             return True
         else:
             print(f"Failed to start server: {self.server.errorString()}")
             return False
+
+    def _write_port_file(self):
+        """Write the port number to a file for client discovery."""
+        PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PORT_FILE.write_text(str(self.port))
 
     def stop(self):
         """Stop the server."""
@@ -69,6 +82,9 @@ from glue.core.subset import SubsetState
             conn.close()
         self.approved_connections.clear()
         self.pending_connections.clear()
+        # Remove port file
+        if PORT_FILE.exists():
+            PORT_FILE.unlink()
 
     def is_running(self):
         """Check if server is running."""
@@ -76,31 +92,92 @@ from glue.core.subset import SubsetState
 
     @Slot()
     def _on_new_connection(self):
-        """Handle new client connection - requires user approval."""
+        """Handle new client connection - wait for auth message."""
         while self.server.hasPendingConnections():
             connection = self.server.nextPendingConnection()
             self.pending_connections.append(connection)
+            # Wait for auth message before approving
+            connection.readyRead.connect(lambda c=connection: self._on_auth_read(c))
+            connection.disconnected.connect(lambda c=connection: self._on_pending_disconnected(c))
 
-            # Show approval dialog
-            approved = self._request_approval(connection)
+    def _on_pending_disconnected(self, connection):
+        """Handle disconnection of pending connection."""
+        if connection in self.pending_connections:
+            self.pending_connections.remove(connection)
 
-            if approved:
-                self.pending_connections.remove(connection)
-                self.approved_connections.append(connection)
-                connection.readyRead.connect(lambda c=connection: self._on_ready_read(c))
-                connection.disconnected.connect(lambda c=connection: self._on_disconnected(c))
+    def _on_auth_read(self, connection):
+        """Handle auth message from pending connection."""
+        if connection not in self.pending_connections:
+            return
 
-                # Send approval confirmation
-                response = {'success': True, 'message': 'Connection approved'}
-                connection.write((json.dumps(response) + '\n').encode('utf-8'))
-                connection.flush()
-            else:
-                self.pending_connections.remove(connection)
-                # Send rejection and close
-                response = {'success': False, 'error': 'Connection rejected by user'}
-                connection.write((json.dumps(response) + '\n').encode('utf-8'))
-                connection.flush()
-                connection.close()
+        if not connection.canReadLine():
+            return
+
+        line = connection.readLine().data().decode('utf-8').strip()
+        if not line:
+            return
+
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError:
+            self._reject_connection(connection, 'Invalid JSON in auth message')
+            return
+
+        # Check for auth message with token
+        provided_token = request.get('token')
+        auto_approved = False
+
+        if provided_token and self.session_token and provided_token == self.session_token:
+            # Valid token - auto-approve
+            auto_approved = True
+        else:
+            # No valid token - require manual approval
+            auto_approved = self._request_approval(connection)
+
+        if auto_approved or auto_approved is True:
+            self._approve_connection(connection, is_first_approval=(self.session_token is None))
+        else:
+            self._reject_connection(connection, 'Connection rejected by user')
+
+    def _approve_connection(self, connection, is_first_approval=False):
+        """Approve a connection and set up command handling."""
+        self.pending_connections.remove(connection)
+        self.approved_connections.append(connection)
+
+        # Generate session token on first manual approval
+        if is_first_approval:
+            self.session_token = secrets.token_urlsafe(32)
+
+        # Disconnect auth handler and connect command handler
+        try:
+            connection.readyRead.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        connection.readyRead.connect(lambda c=connection: self._on_ready_read(c))
+
+        try:
+            connection.disconnected.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        connection.disconnected.connect(lambda c=connection: self._on_disconnected(c))
+
+        # Send approval confirmation with token
+        response = {
+            'success': True,
+            'message': 'Connection approved',
+            'token': self.session_token,
+        }
+        connection.write((json.dumps(response) + '\n').encode('utf-8'))
+        connection.flush()
+
+    def _reject_connection(self, connection, error):
+        """Reject and close a connection."""
+        if connection in self.pending_connections:
+            self.pending_connections.remove(connection)
+        response = {'success': False, 'error': error}
+        connection.write((json.dumps(response) + '\n').encode('utf-8'))
+        connection.flush()
+        connection.close()
 
     def _request_approval(self, connection):
         """Show dialog to approve/reject connection."""
