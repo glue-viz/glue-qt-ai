@@ -1,4 +1,4 @@
-# glue-qt-ai
+# glue-qt-llm-bridge
 
 A plugin for [glue-qt](https://github.com/glue-viz/glue-qt) that enables AI assistants (like Claude Code) to programmatically control glue.
 
@@ -7,7 +7,7 @@ A plugin for [glue-qt](https://github.com/glue-viz/glue-qt) that enables AI assi
 ## Installation
 
 ```bash
-pip install git+https://github.com/glue-viz/glue-qt-ai
+pip install git+https://github.com/glue-viz/glue-qt-llm-bridge
 ```
 
 ## Usage
@@ -17,13 +17,13 @@ pip install git+https://github.com/glue-viz/glue-qt-ai
 3. Tell your AI assistant about the bridge, e.g.:
 
 ```
-The glue-qt-ai package is installed. Check `glue_qt_ai.__doc__` for instructions on how to connect to and control glue.
+The glue-qt-llm-bridge package is installed. Check `glue_qt_llm_bridge.__doc__` for instructions on how to connect to and control glue.
 ```
 
 Or in a CLAUDE.md / system prompt:
 
 ```
-To control glue-qt, run: python -c "import glue_qt_ai; print(glue_qt_ai.__doc__)"
+To control glue-qt, run: python -c "import glue_qt_llm_bridge; print(glue_qt_llm_bridge.__doc__)"
 ```
 
 4. Tell your AI assistant what you want to do in glue, for example:

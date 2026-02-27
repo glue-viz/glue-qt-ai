@@ -8,7 +8,7 @@ from glue_qt.config import menubar_plugin
 
 def toggle_bridge(session, data_collection):
     """Toggle the AI bridge server on/off."""
-    from glue_qt_ai.server import start_bridge_server, stop_bridge_server
+    from glue_qt_llm_bridge.server import start_bridge_server, stop_bridge_server
 
     app = session.application
 

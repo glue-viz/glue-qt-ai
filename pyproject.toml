@@ -1,7 +1,7 @@
 [project]
-name = "glue-qt-ai"
+name = "glue-qt-llm-bridge"
 version = "0.1.0"
-description = "AI assistant bridge for glue-qt"
+description = "LLM bridge for glue-qt"
 readme = "README.md"
 license = {text = "BSD-3-Clause"}
 authors = [
@@ -18,11 +18,11 @@ test = [
 ]
 
 [project.entry-points."glue.plugins"]
-ai_bridge = "glue_qt_ai:setup"
+llm_bridge = "glue_qt_llm_bridge:setup"
 
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["glue_qt_ai*"]
+include = ["glue_qt_llm_bridge*"]

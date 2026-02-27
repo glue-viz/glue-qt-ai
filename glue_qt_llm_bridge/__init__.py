@@ -1,5 +1,5 @@
 """
-# Glue-Qt AI Bridge - Instructions for LLMs
+# Glue-Qt LLM Bridge - Instructions for LLMs
 
 ## Overview
 This bridge allows you to programmatically control glue-qt (an astronomy/science
@@ -29,8 +29,8 @@ visualization tool) via a socket connection.
 
 ## Command-line client
 ```bash
-python -m glue_qt_ai.client "your_code_here"
-python -m glue_qt_ai.client --eval "expression"
+python -m glue_qt_llm_bridge.client "your_code_here"
+python -m glue_qt_llm_bridge.client --eval "expression"
 ```
 
 The client auto-detects the port from `~/.glue/bridge_port`.
@@ -42,12 +42,12 @@ returns a session token. Pass this token to subsequent calls to skip the dialog:
 
 ```bash
 # First call - user approves, token is printed
-python -m glue_qt_ai.client "print('hello')"
+python -m glue_qt_llm_bridge.client "print('hello')"
 # Output: GLUE_BRIDGE_TOKEN=<token>
 #         hello
 
 # Subsequent calls - use token for auto-approval
-python -m glue_qt_ai.client --token <token> "print('world')"
+python -m glue_qt_llm_bridge.client --token <token> "print('world')"
 ```
 
 The token is only valid for the current glue session and is never written to disk.
@@ -143,7 +143,7 @@ data['column']      # get column data as array
 - Viewers are in `app.viewers[tab_index][viewer_index]`
 """
 
-from glue_qt_ai.server import (
+from glue_qt_llm_bridge.server import (
     GlueBridgeServer,
     start_bridge_server,
     stop_bridge_server,
@@ -163,5 +163,5 @@ __all__ = [
 
 def setup():
     """Register the plugin with glue."""
-    from glue_qt_ai.plugin import setup_plugin
+    from glue_qt_llm_bridge.plugin import setup_plugin
     setup_plugin()
